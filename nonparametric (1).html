@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Non-parametric Statistics Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--ink:#1f2a37;--bg:#f4f6f5;--card:#fff;--ac:#0f766e;--ac2:#115e59;--ln:#d8dedb;--mu:#5b6770}
+*{box-sizing:border-box}body{margin:0;font:16px/1.6 Sarabun,'Noto Sans Thai',system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:1100px;margin:auto;padding:20px}h1{font-size:1.7rem;margin:.2em 0}h2{font-size:1.15rem;margin:0 0 10px}
+section{background:var(--card);border:1px solid var(--ln);border-radius:8px;padding:16px;margin:14px 0}
+button{font:inherit;border:1px solid var(--ac);background:#fff;color:var(--ac2);padding:6px 14px;border-radius:6px;cursor:pointer;margin:3px}
+button:hover{background:#e6f4f1}button.on,button.pri{background:var(--ac);color:#fff}button.pri:hover{background:var(--ac2)}
+button:focus-visible,input:focus-visible{outline:3px solid #f59e0b;outline-offset:1px}
+.w{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.92rem}th,td{border:1px solid var(--ln);padding:5px 9px;text-align:left;vertical-align:top}th{background:#e8efed}
+.pv td,.pv th{text-align:right;white-space:nowrap}.mu{color:var(--mu);font-size:.92rem}.err{color:#b91c1c;font-weight:600}
+.box{background:#eef6f4;border-left:4px solid var(--ac);padding:10px 14px;margin:10px 0;border-radius:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:14px}@media(max-width:520px){.grid{grid-template-columns:1fr}}
+.cc{border:1px solid var(--ln);border-radius:8px;padding:10px}.cv{height:340px;position:relative}.cc h3{font-size:1rem;margin:0 0 6px}
+</style></head><body><main>
+<h1 data-th="โปรแกรมวิเคราะห์สถิติ Non-parametric" data-en="Non-parametric Statistics Analyzer"></h1>
+<p class="mu" data-th="เลือกการทดสอบ แนบไฟล์ Excel (หรือใช้ข้อมูลตัวอย่าง) แล้วกดประมวลผล" data-en="Choose a test, upload an Excel file (or use sample data), then press Process."></p>
+<section><h2 data-th="1. เลือกการวิเคราะห์" data-en="1. Choose analysis"></h2><div id="tb"></div><p id="hint" class="mu"></p></section>
+<section><h2 data-th="2. ข้อมูล" data-en="2. Data"></h2>
+<input type="file" id="fi" accept=".xlsx,.xls,.csv">
+<button id="bs" data-th="ใช้ข้อมูลตัวอย่าง" data-en="Use sample data"></button>
+<button id="bds" data-th="ดาวน์โหลดไฟล์ตัวอย่าง (.xlsx)" data-en="Download sample (.xlsx)"></button>
+<div class="w pv" id="pv"></div></section>
+<section><h2 data-th="3. ภาษาที่แสดงผล" data-en="3. Output language"></h2>
+<button class="lg" data-l="th">ไทย</button><button class="lg" data-l="en">English</button></section>
+<section><button class="pri" id="run" data-th="ประมวลผล" data-en="Process"></button>
+<button id="rs" data-th="รีเซ็ตหน้า" data-en="Reset page"></button><p id="msg" class="err"></p></section>
+<div id="out" hidden>
+<section><h2 data-th="ผลการวิเคราะห์" data-en="Results"></h2><div id="tbls"></div>
+<button class="pri" id="dx" data-th="ดาวน์โหลดตารางเป็น Excel" data-en="Download tables as Excel"></button></section>
+<section><button class="pri" id="sc" data-th="แสดงกราฟทั้งหมด" data-en="Show all charts"></button><div class="grid" id="gr" style="margin-top:12px"></div></section>
+</div></main>
+<script>
+const $=s=>document.querySelector(s);let lang='th',cur='mwu',data=null,res=null,TB=[],CH=[],shown=false,nm=[];
+const L=(a,b)=>lang==='th'?a:b,f=(x,d=3)=>isFinite(x)?(+x).toFixed(d):'-',pf=p=>p<1e-4?'<0.0001':f(p,4);
+/* ---------- math ---------- */
+function lg(x){const c=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,.1208650973866179e-2,-.5395239384953e-5];let y=x,t=x+5.5;t-=(x+.5)*Math.log(t);let s=1.000000000190015;for(let j=0;j<6;j++)s+=c[j]/++y;return -t+Math.log(2.5066282746310005*s/x)}
+function gp(a,x){if(x<=0)return 0;const e=Math.exp(-x+a*Math.log(x)-lg(a));if(x<a+1){let ap=a,s=1/a,d=s;for(let i=0;i<500;i++){ap++;d*=x/ap;s+=d;if(Math.abs(d)<Math.abs(s)*1e-13)break}return s*e}
+let b=x+1-a,c=1e300,d=1/b,h=d;for(let i=1;i<500;i++){const an=-i*(i-a);b+=2;d=an*d+b;if(Math.abs(d)<1e-300)d=1e-300;c=b+an/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const l=d*c;h*=l;if(Math.abs(l-1)<1e-13)break}return 1-e*h}
+const chiP=(x,k)=>x<=0?1:1-gp(k/2,x/2),pZ=z=>chiP(z*z,1);
+function bcf(a,b,x){const qab=a+b,qap=a+1,qam=a-1;let c=1,d=1-qab*x/qap;if(Math.abs(d)<1e-300)d=1e-300;d=1/d;let h=d;for(let m=1;m<500;m++){const m2=2*m;let aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<1e-300)d=1e-300;c=1+aa/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<1e-300)d=1e-300;c=1+aa/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const l=d*c;h*=l;if(Math.abs(l-1)<1e-13)break}return h}
+function ib(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const bt=Math.exp(lg(a+b)-lg(a)-lg(b)+a*Math.log(x)+b*Math.log(1-x));return x<(a+1)/(a+b+2)?bt*bcf(a,b,x)/a:1-bt*bcf(b,a,1-x)/b}
+const tP=(t,df)=>ib(df/(df+t*t),df/2,.5);
+const sum=a=>a.reduce((x,y)=>x+y,0),mean=a=>sum(a)/a.length,sd=a=>{const m=mean(a);return Math.sqrt(sum(a.map(x=>(x-m)**2))/(a.length-1))};
+const qt=(a,p)=>{const s=[...a].sort((x,y)=>x-y),h=(s.length-1)*p,i=Math.floor(h);return s[i]+(h-i)*((s[i+1]??s[i])-s[i])};
+function rk(a){const ix=a.map((v,i)=>[v,i]).sort((x,y)=>x[0]-y[0]),r=Array(a.length);let tie=0;for(let i=0;i<ix.length;){let j=i;while(j+1<ix.length&&ix[j+1][0]===ix[i][0])j++;const t=j-i+1;for(let k=i;k<=j;k++)r[ix[k][1]]=(i+j)/2+1;tie+=t**3-t;i=j+1}return{r,tie}}
+const tg=a=>{const m={};a.forEach(v=>m[v]=(m[v]||0)+1);return Object.values(m)};
+const pear=(x,y)=>{const mx=mean(x),my=mean(y);return sum(x.map((v,i)=>(v-mx)*(y[i]-my)))/Math.sqrt(sum(x.map(v=>(v-mx)**2))*sum(y.map(v=>(v-my)**2)))};
+const num=a=>a.filter(v=>typeof v==='number'),G=()=>data.cols.map(num);
+function pairs(k){const c=data.cols.slice(0,k),o=[];for(let i=0;i<c[0].length;i++)if(c.every(x=>typeof x[i]==='number'))o.push(c.map(x=>x[i]));return o}
+const effL=(v,t)=>v<t[0]?L('เล็กน้อยมาก','negligible'):v<t[1]?L('เล็ก','small'):v<t[2]?L('ปานกลาง','medium'):L('ใหญ่','large');
+const need=(c,n)=>{if(!c)throw new Error(L('ข้อมูลไม่เพียงพอ (ต้องมีอย่างน้อย '+n+' ค่า/แถวที่ใช้ได้)','Not enough valid data (need at least '+n+')'))};
+/* ---------- tests ---------- */
+const sample={
+ two:[['Method A','Method B'],[[12,15,14,10,18,20,11,16,13,17],[22,25,19,24,28,21,26,23,30,27,18]]],
+ pair:[['Before','After'],[[60,72,65,80,55,70,68,75,62,66,71,59],[64,70,72,88,63,78,72,84,60,74,80,67]]],
+ k:[['Group 1','Group 2','Group 3'],[[7,9,6,8,10,5,7],[12,14,11,15,13,12,16],[18,16,20,17,19,15,21]]],
+ rep:[['Time 1','Time 2','Time 3'],[[5,6,4,7,5,6,4,5,6,5],[6,7,6,8,7,7,5,7,8,6],[8,8,7,9,8,9,7,8,9,8]]],
+ cor:[['Study hours','Score'],[[2,3,4,5,6,7,8,9,10,11,12,3.5],[55,52,60,65,63,70,74,72,80,85,83,58]]],
+ chi:[['Gender','Preference'],[[...Array(14).fill('Female'),...Array(6).fill('Female'),...Array(7).fill('Male'),...Array(13).fill('Male')],[...Array(14).fill('Product A'),...Array(6).fill('Product B'),...Array(7).fill('Product A'),...Array(13).fill('Product B')]]]};
+function desc(g,mr){return{t:L('สถิติเชิงพรรณนา','Descriptive statistics'),h:[L('กลุ่ม/ตัวแปร','Group/Variable'),'n',L('ค่าเฉลี่ย','Mean'),'SD','Min','Q1',L('มัธยฐาน','Median'),'Q3','Max',...(mr?[L('ลำดับเฉลี่ย','Mean rank')]:[])],
+ r:g.map((a,j)=>[nm[j],a.length,f(mean(a)),f(sd(a)),f(Math.min(...a)),f(qt(a,.25)),f(qt(a,.5)),f(qt(a,.75)),f(Math.max(...a)),...(mr?[f(mr[j])]:[])])}}
+const T={
+mwu:{n:['แมน-วิทนีย์ ยู (2 กลุ่มอิสระ)','Mann-Whitney U (2 independent groups)'],k:2,s:'two',
+ f:['แต่ละคอลัมน์ = 1 กลุ่ม (ใช้ 2 คอลัมน์แรก) ข้อมูลเป็นตัวเลขเรียงลำดับได้','Each column = one group (first 2 columns), numeric/ordinal data'],
+ h:['การแจกแจงของ 2 กลุ่มเหมือนกัน (มัธยฐานไม่ต่างกัน)|การแจกแจงของ 2 กลุ่มต่างกัน','The two groups have the same distribution (equal medians)|The distributions differ'],
+ run(){const g=G().slice(0,2),[a,b]=g,n1=a.length,n2=b.length,N=n1+n2;need(n1>1&&n2>1,2);const{r,tie}=rk([...a,...b]),R1=sum(r.slice(0,n1)),R2=sum(r.slice(n1)),U1=R1-n1*(n1+1)/2,U2=n1*n2-U1,U=Math.min(U1,U2),mu=n1*n2/2,sg=Math.sqrt(n1*n2/12*((N+1)-tie/(N*(N-1)))),z=Math.max(0,Math.abs(U-mu)-.5)/sg,p=pZ(z),rr=z/Math.sqrt(N);
+ return{g,mr:[R1/n1,R2/n2],rb:[nm.slice(0,2),[R1/n1,R2/n2],L('ลำดับเฉลี่ย','Mean rank')],p,
+ st:[['U',f(U),L('ค่า U ที่น้อยกว่าของสองกลุ่ม','Smaller of the two U values')],['U1 / U2',f(U1,1)+' / '+f(U2,1),L('U ของแต่ละกลุ่ม','U for each group')],[L('ผลรวมลำดับ R1 / R2','Rank sums R1 / R2'),f(R1,1)+' / '+f(R2,1),L('ผลรวมลำดับที่ของแต่ละกลุ่ม','Sum of ranks in each group')],
+ ['Z',f(z),L('ค่า Z (แก้ค่าต่อเนื่อง และแก้ค่าซ้ำ)','Z (continuity & tie corrected)')],['p-value',pf(p),L('ค่า p แบบสองทาง (ประมาณด้วยการแจกแจงปกติ)','Two-sided p (normal approximation)')],
+ ['r = |Z|/√N',f(rr),L('ขนาดอิทธิพล: ','Effect size: ')+effL(rr,[.1,.3,.5])],[L('Rank-biserial','Rank-biserial'),f((U1-U2)/(n1*n2)),L('ค่าใกล้ ±1 = กลุ่มหนึ่งสูงกว่าอีกกลุ่มชัดเจน','Near ±1 = one group clearly higher')]]}}},
+wil:{n:['วิลคอกซัน Signed-Rank (2 กลุ่มสัมพันธ์)','Wilcoxon Signed-Rank (2 paired groups)'],k:2,s:'pair',
+ f:['คอลัมน์ 1 = ก่อน, คอลัมน์ 2 = หลัง (แถวเดียวกันคือคู่เดียวกัน)','Column 1 = before, column 2 = after (same row = same subject)'],
+ h:['มัธยฐานของผลต่างเท่ากับ 0|มัธยฐานของผลต่างไม่เท่ากับ 0','Median difference = 0|Median difference ≠ 0'],
+ run(){const P=pairs(2),d=P.map(x=>x[1]-x[0]).filter(x=>x!==0),n=d.length;need(n>=2,2);const{r,tie}=rk(d.map(Math.abs)),Wp=sum(r.filter((_,i)=>d[i]>0)),Wm=sum(r.filter((_,i)=>d[i]<0)),W=Math.min(Wp,Wm),mu=n*(n+1)/4,sg=Math.sqrt(n*(n+1)*(2*n+1)/24-tie/48),z=Math.max(0,Math.abs(W-mu)-.5)/sg,p=pZ(z),rr=z/Math.sqrt(n);
+ return{g:[P.map(x=>x[0]),P.map(x=>x[1])],P,p,rb:[['W+ ('+L('เพิ่มขึ้น','increase')+')','W− ('+L('ลดลง','decrease')+')'],[Wp,Wm],L('ผลรวมลำดับ','Rank sum')],
+ st:[[L('จำนวนคู่ที่ผลต่าง≠0','Pairs with non-zero diff'),n,L('คู่ที่ผลต่างเป็น 0 ถูกตัดออก','Zero differences are dropped')],['W+',f(Wp,1),L('ผลรวมลำดับของผลต่างที่เป็นบวก (หลัง>ก่อน)','Sum of ranks of positive differences (after>before)')],['W−',f(Wm,1),L('ผลรวมลำดับของผลต่างที่เป็นลบ','Sum of ranks of negative differences')],['W',f(W,1),L('ค่าที่น้อยกว่าของ W+ และ W−','Smaller of W+ and W−')],
+ [L('มัธยฐานผลต่าง','Median difference'),f(qt(P.map(x=>x[1]-x[0]),.5)),L('หลัง − ก่อน','After − before')],['Z',f(z),L('แก้ค่าต่อเนื่องและค่าซ้ำ','Continuity & tie corrected')],['p-value',pf(p),L('ค่า p แบบสองทาง','Two-sided p')],['r = |Z|/√n',f(rr),L('ขนาดอิทธิพล: ','Effect size: ')+effL(rr,[.1,.3,.5])]]}}},
+sgn:{n:['ซายน์ เทสต์ (2 กลุ่มสัมพันธ์)','Sign Test (2 paired groups)'],k:2,s:'pair',
+ f:['คอลัมน์ 1 = ก่อน, คอลัมน์ 2 = หลัง','Column 1 = before, column 2 = after'],
+ h:['จำนวนคู่ที่เพิ่มขึ้นและลดลงเท่ากัน (P(+)=0.5)|จำนวนไม่เท่ากัน','Increases and decreases equally likely (P(+)=0.5)|Not equally likely'],
+ run(){const P=pairs(2),d=P.map(x=>x[1]-x[0]),np=d.filter(x=>x>0).length,nn=d.filter(x=>x<0).length,n=np+nn;need(n>=1,1);const m=Math.min(np,nn);let c=0;for(let i=0;i<=m;i++)c+=Math.exp(lg(n+1)-lg(i+1)-lg(n-i+1)-n*Math.LN2);const p=Math.min(1,2*c);
+ return{g:[P.map(x=>x[0]),P.map(x=>x[1])],P,p,rb:[[L('เพิ่มขึ้น (+)','Increase (+)'),L('ลดลง (−)','Decrease (−)')],[np,nn],L('จำนวนคู่','Pairs')],
+ st:[['n+',np,L('จำนวนคู่ที่หลัง>ก่อน','Pairs with after>before')],['n−',nn,L('จำนวนคู่ที่หลัง<ก่อน','Pairs with after<before')],[L('คู่ที่เท่ากัน (ตัดออก)','Ties (dropped)'),d.length-n,''],['n',n,L('จำนวนคู่ที่ใช้ทดสอบ','Pairs used')],['p-value (exact)',pf(p),L('ค่า p แบบ Binomial สองทาง (แม่นตรง)','Exact two-sided binomial p')]]}}},
+kw:{n:['ครัสคัล-วอลลิส (k กลุ่มอิสระ)','Kruskal-Wallis (k independent groups)'],k:2,s:'k',
+ f:['แต่ละคอลัมน์ = 1 กลุ่ม (2 กลุ่มขึ้นไป)','Each column = one group (2+ groups)'],
+ h:['ทุกกลุ่มมีการแจกแจงเหมือนกัน|อย่างน้อย 1 กลุ่มแตกต่าง','All groups share the same distribution|At least one group differs'],
+ run(){const g=G().filter(a=>a.length>0),k=g.length,all=[].concat(...g),N=all.length;need(k>=2,2);const{r,tie}=rk(all);let i=0;const Rs=g.map(a=>{const s=sum(r.slice(i,i+a.length));i+=a.length;return s});let H=12/(N*(N+1))*sum(Rs.map((s,j)=>s*s/g[j].length))-3*(N+1);H/=1-tie/(N**3-N);const df=k-1,p=chiP(H,df),e2=H/(N-1);
+ return{g,mr:Rs.map((s,j)=>s/g[j].length),rb:[nm.slice(0,k),Rs.map((s,j)=>s/g[j].length),L('ลำดับเฉลี่ย','Mean rank')],p,
+ st:[['H',f(H),L('ค่าสถิติ Kruskal-Wallis (แก้ค่าซ้ำแล้ว)','Kruskal-Wallis statistic (tie-corrected)')],['df',df,L('จำนวนกลุ่ม − 1','Groups − 1')],['p-value',pf(p),L('จากการแจกแจงไคกำลังสอง','From chi-square distribution')],['ε² = H/(N−1)',f(e2),L('ขนาดอิทธิพล: ','Effect size: ')+effL(e2,[.01,.08,.26])],['N',N,L('จำนวนข้อมูลทั้งหมด','Total observations')]]}}},
+fri:{n:['ฟรีดแมน (k กลุ่มสัมพันธ์/วัดซ้ำ)','Friedman (k related groups / repeated)'],k:3,s:'rep',
+ f:['แต่ละคอลัมน์ = 1 เงื่อนไข/เวลา, แต่ละแถว = 1 ผู้เข้าร่วม (3 คอลัมน์ขึ้นไป)','Each column = a condition, each row = a subject (3+ columns)'],
+ h:['ทุกเงื่อนไขมีการแจกแจงเหมือนกัน|อย่างน้อย 1 เงื่อนไขแตกต่าง','All conditions share the same distribution|At least one condition differs'],
+ run(){const k=data.cols.length,P=pairs(k),n=P.length;need(n>=2,2);let tie=0;const Rs=Array(k).fill(0);P.forEach(row=>{const o=rk(row);tie+=o.tie;o.r.forEach((v,j)=>Rs[j]+=v)});let Q=12/(n*k*(k+1))*sum(Rs.map(s=>s*s))-3*n*(k+1);Q/=1-tie/(n*k*(k*k-1));const p=chiP(Q,k-1),W=Q/(n*(k-1));
+ return{g:data.cols.map((_,j)=>P.map(x=>x[j])),mr:Rs.map(s=>s/n),rb:[nm,Rs.map(s=>s/n),L('ลำดับเฉลี่ยภายในแถว','Mean rank within rows')],P,p,
+ st:[['χ²r (Q)',f(Q),L('ค่าสถิติ Friedman (แก้ค่าซ้ำแล้ว)','Friedman statistic (tie-corrected)')],['df',k-1,L('จำนวนเงื่อนไข − 1','Conditions − 1')],['p-value',pf(p),L('จากการแจกแจงไคกำลังสอง','From chi-square distribution')],["Kendall's W",f(W),L('ความสอดคล้องของอันดับ: ','Concordance: ')+effL(W,[.1,.3,.5])],['n',n,L('จำนวนแถวที่ข้อมูลครบ','Complete rows')]]}}},
+spe:{n:['สหสัมพันธ์สเปียร์แมน (Spearman rho)','Spearman rank correlation'],k:2,s:'cor',
+ f:['คอลัมน์ 1 = ตัวแปร X, คอลัมน์ 2 = ตัวแปร Y','Column 1 = X, column 2 = Y'],
+ h:['ไม่มีความสัมพันธ์เชิงอันดับ (ρ = 0)|มีความสัมพันธ์เชิงอันดับ (ρ ≠ 0)','No monotonic association (ρ = 0)|Monotonic association (ρ ≠ 0)'],
+ run(){const P=pairs(2),x=P.map(a=>a[0]),y=P.map(a=>a[1]),n=x.length;need(n>=4,4);const rx=rk(x).r,ry=rk(y).r,rho=pear(rx,ry),t=rho*Math.sqrt((n-2)/(1-rho*rho)),p=Math.abs(rho)>=1?0:tP(t,n-2),z=Math.atanh(Math.min(.999999,Math.abs(rho))),se=1/Math.sqrt(n-3),s=Math.sign(rho);
+ return{g:[x,y],p,sc:{x,y,rx,ry},st:[['ρ (rho)',f(rho),L('ค่าสัมประสิทธิ์สหสัมพันธ์ −1 ถึ +1: ','Coefficient −1 to +1: ')+effL(Math.abs(rho),[.1,.3,.5])],['ρ²',f(rho*rho),L('สัดส่วนความแปรปรวนของอันดับที่ร่วมกัน','Shared variance of ranks')],['t',f(t),L('สถิติทดสอบ t','t statistic')],['df',n-2,'n − 2'],['p-value',pf(p),L('ค่า p แบบสองทาง','Two-sided p')],
+ [L('95% CI (Fisher z)','95% CI (Fisher z)'),'['+f(s*Math.tanh(z-1.96*se),3)+', '+f(s*Math.tanh(z+1.96*se),3)+']',L('ช่วงความเชื่อมั่นโดยประมาณ','Approximate confidence interval')],['n',n,L('จำนวนคู่ข้อมูล','Number of pairs')]]}}},
+ken:{n:['สหสัมพันธ์เคนดอลล์ (Kendall tau-b)','Kendall tau-b correlation'],k:2,s:'cor',
+ f:['คอลัมน์ 1 = X, คอลัมน์ 2 = Y','Column 1 = X, column 2 = Y'],
+ h:['ไม่มีความสัมพันธ์เชิงอันดับ (τ = 0)|มีความสัมพันธ์เชิงอันดับ (τ ≠ 0)','No association (τ = 0)|Association (τ ≠ 0)'],
+ run(){const P=pairs(2),x=P.map(a=>a[0]),y=P.map(a=>a[1]),n=x.length;need(n>=4,4);let C=0,D=0;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const s=Math.sign(x[i]-x[j])*Math.sign(y[i]-y[j]);if(s>0)C++;else if(s<0)D++}
+ const n0=n*(n-1)/2,tx=tg(x),ty=tg(y),n1=sum(tx.map(t=>t*(t-1)/2)),n2=sum(ty.map(t=>t*(t-1)/2)),tau=(C-D)/Math.sqrt((n0-n1)*(n0-n2)),a=sum(tx.map(t=>t*(t-1)*(2*t+5))),b=sum(ty.map(t=>t*(t-1)*(2*t+5))),a1=sum(tx.map(t=>t*(t-1)*(t-2))),b1=sum(ty.map(t=>t*(t-1)*(t-2))),a2=2*n1,b2=2*n2,v=(n*(n-1)*(2*n+5)-a-b)/18+a1*b1/(9*n*(n-1)*(n-2))+a2*b2/(2*n*(n-1)),z=(C-D)/Math.sqrt(v),p=pZ(z);
+ return{g:[x,y],p,sc:{x,y,rx:rk(x).r,ry:rk(y).r},st:[['τb (tau-b)',f(tau),L('สัมประสิทธิ์เคนดอลล์ (แก้ค่าซ้ำ): ','Kendall coefficient (tie-adjusted): ')+effL(Math.abs(tau),[.1,.3,.5])],[L('คู่สอดคล้อง (C)','Concordant pairs (C)'),C,L('คู่ที่ X,Y เปลี่ยนไปทางเดียวกัน','Pairs moving in the same direction')],[L('คู่ไม่สอดคล้อง (D)','Discordant pairs (D)'),D,L('คู่ที่ X,Y เปลี่ยนสวนทางกัน','Pairs moving in opposite directions')],['Z',f(z),L('ประมาณด้วยการแจกแจงปกติ','Normal approximation')],['p-value',pf(p),L('ค่า p แบบสองทาง','Two-sided p')],['n',n,L('จำนวนคู่ข้อมูล','Number of pairs')]]}}},
+chi:{n:['ไคกำลังสอง ความเป็นอิสระ (ตัวแปรกลุ่ม 2 ตัว)','Chi-square test of independence'],k:2,s:'chi',
+ f:['คอลัมน์ 1 และ 2 = ตัวแปรกลุ่ม (ข้อความหรือรหัส) แถวละ 1 ราย','Columns 1 & 2 = categorical variables, one case per row'],
+ h:['ตัวแปรทั้งสองเป็นอิสระต่อกัน|ตัวแปรทั้งสองมีความสัมพันธ์กัน','The two variables are independent|The variables are associated'],
+ run(){const a=[],b=[];data.cols[0].forEach((v,i)=>{const w=data.cols[1][i];if(v!=null&&w!=null){a.push(String(v));b.push(String(w))}});const rl=[...new Set(a)].sort(),cl=[...new Set(b)].sort(),N=a.length;need(rl.length>1&&cl.length>1,2);
+ const O=rl.map(r=>cl.map(c=>a.filter((v,i)=>v===r&&b[i]===c).length)),rs=O.map(sum),cs=cl.map((_,j)=>sum(O.map(r=>r[j]))),E=rl.map((_,i)=>cl.map((_,j)=>rs[i]*cs[j]/N));let X=0,low=0;O.forEach((r,i)=>r.forEach((o,j)=>{X+=(o-E[i][j])**2/E[i][j];if(E[i][j]<5)low++}));
+ const df=(rl.length-1)*(cl.length-1),p=chiP(X,df),V=Math.sqrt(X/(N*Math.min(rl.length-1,cl.length-1))),Rz=O.map((r,i)=>r.map((o,j)=>(o-E[i][j])/Math.sqrt(E[i][j]*(1-rs[i]/N)*(1-cs[j]/N))));
+ return{p,ct:{rl,cl,O,E,Rz},tabs:[{t:L('ตารางไขว้: ความถี่ที่สังเกต (ค่าคาดหวัง)','Contingency table: observed (expected)'),h:[nm[0]+' \\ '+nm[1],...cl,L('รวม','Total')],r:[...rl.map((r,i)=>[r,...O[i].map((o,j)=>o+' ('+f(E[i][j],2)+')'),rs[i]]),[L('รวม','Total'),...cs,N]]},{t:L('ส่วนตกค้างมาตรฐาน (|z|>1.96 = เซลล์ที่แตกต่างอย่างมีนัยสำคัญ)','Standardized residuals (|z|>1.96 = notable cell)'),h:[nm[0],...cl],r:rl.map((r,i)=>[r,...Rz[i].map(z=>f(z,2))])}],
+ st:[['χ²',f(X),L('ผลรวม (O−E)²/E','Sum of (O−E)²/E')],['df',df,'(r−1)(c−1)'],['p-value',pf(p),L('จากการแจกแจงไคกำลังสอง','From chi-square distribution')],["Cramér's V",f(V),L('ขนาดอิทธิพล: ','Effect size: ')+effL(V,[.1,.3,.5])],['N',N,L('จำนวนข้อมูล','Total cases')],[L('เซลล์ที่ E<5','Cells with E<5'),low+' / '+rl.length*cl.length,low?L('ควรระวัง: ข้อตกลงเบื้องต้นอาจไม่ครบ (พิจารณา Fisher exact)','Caution: assumption may be violated (consider Fisher exact)'):L('เป็นไปตามข้อตกลง','Assumption satisfied')]]}}},
+ks:{n:['โคลโมโกรอฟ-สมีร์นอฟ (2 กลุ่มอิสระ)','Kolmogorov-Smirnov (2 independent groups)'],k:2,s:'two',
+ f:['แต่ละคอลัมน์ = 1 กลุ่ม (ใช้ 2 คอลัมน์แรก)','Each column = one group (first 2 columns)'],
+ h:['ทั้งสองกลุ่มมาจากการแจกแจงเดียวกัน|การแจกแจงต่างกัน (รูปร่าง/ตำแหน่ง/การกระจาย)','Same distribution|Distributions differ (shape/location/spread)'],
+ run(){const g=G().slice(0,2),[a,b]=g,n1=a.length,n2=b.length;need(n1>1&&n2>1,2);const v=[...new Set([...a,...b])].sort((x,y)=>x-y);let D=0,at=v[0];v.forEach(t=>{const d=Math.abs(a.filter(x=>x<=t).length/n1-b.filter(x=>x<=t).length/n2);if(d>D){D=d;at=t}});
+ const en=Math.sqrt(n1*n2/(n1+n2)),lm=(en+.12+.11/en)*D;let p=0;for(let j=1;j<100;j++)p+=2*(j%2?1:-1)*Math.exp(-2*j*j*lm*lm);p=Math.min(1,Math.max(0,p));
+ return{g,p,st:[['D',f(D),L('ความต่างสูงสุดระหว่าง ECDF ของสองกลุ่ม','Maximum gap between the two ECDFs')],[L('ตำแหน่งที่ต่างสุด','Value at max gap'),f(at),''],['p-value',pf(p),L('ค่า p แบบสองทาง (ประมาณเชิงอาการ)','Two-sided asymptotic p')],['n1 / n2',n1+' / '+n2,'']]}}}
+};
+/* ---------- charts ---------- */
+const bg={id:'bg',beforeDraw(c){const x=c.ctx;x.save();x.globalCompositeOperation='destination-over';x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.restore()}};Chart.register(bg);
+const PA=(j,a=1)=>`hsla(${(j*67+175)%360},65%,42%,${a})`;
+const mk=(t,d,type,ds,labels,xt,yt,o={})=>({t,d,c:{type,data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{title:{display:!!xt,text:xt},...(o.x||{})},y:{title:{display:!!yt,text:yt},...(o.y||{})}},plugins:{legend:{display:ds.length>1||!!o.lg}}}}});
+function charts(){const R=res,o=[],g=R.g;
+ if(g){const N=sum(g.map(a=>a.length)),all=[].concat(...g),mn=Math.min(...all),mx=Math.max(...all),k=Math.max(5,Math.ceil(1+Math.log2(N))),w=(mx-mn)/k||1,nmz=nm.slice(0,g.length);
+ o.push(mk(L('มัธยฐานและช่วงควอร์ไทล์','Median and interquartile range'),L('แท่งสีอ่อน = ค่าต่ำสุด–สูงสุด, แท่งสีเข้ม = Q1–Q3 (50% ตรงกลางของข้อมูล), เส้นสีแดง = มัธยฐาน ถ้าเส้นมัธยฐานและกล่องของกลุ่มเหลื่อมกันมาก แสดงว่ากลุ่มน่าจะแตกต่างกัน','Light bar = min–max, dark bar = Q1–Q3 (middle 50%), red line = median. Strongly offset medians/boxes suggest group differences.'),'bar',
+ [{label:'Min–Max',data:g.map(a=>[Math.min(...a),Math.max(...a)]),backgroundColor:'rgba(15,118,110,.2)',grouped:false,barPercentage:.35},{label:'Q1–Q3',data:g.map(a=>[qt(a,.25),qt(a,.75)]),backgroundColor:'rgba(15,118,110,.75)',grouped:false,barPercentage:.7},{type:'line',label:L('มัธยฐาน','Median'),data:g.map(a=>qt(a,.5)),showLine:false,pointStyle:'line',pointRadius:28,pointBorderWidth:4,borderColor:'#dc2626'}],nmz,'',L('ค่า','Value')));
+ if(R.rb)o.push(mk(R.rb[2],L('เปรียบเทียบค่ากลางเชิงอันดับ/จำนวนของแต่ละกลุ่ม แท่งที่สูงกว่าหมายถึงมีค่าโดยรวมสูงกว่า (หรือมีจำนวนมากกว่า) ซึ่งเป็นพื้นฐานของค่าสถิติทดสอบ','Compares rank-based centre/counts per group. A higher bar means generally higher values (or more cases); this drives the test statistic.'),'bar',[{label:R.rb[2],data:R.rb[1],backgroundColor:R.rb[0].map((_,j)=>PA(j,.8))}],R.rb[0],'',R.rb[2]));
+ if(!R.sc)o.push(mk(L('ฮิสโทแกรมเปรียบเทียบ','Overlaid histograms'),L('แสดงความถี่ของข้อมูลในแต่ละช่วง ใช้ดูรูปร่างการแจกแจง ความเบ้ และการเหลื่อมซ้อนกันของกลุ่ม (เหตุผลที่ต้องใช้สถิติ non-parametric คือการแจกแจงมักไม่ปกติ)','Frequency per bin to inspect shape, skewness and overlap between groups (the reason non-parametric tests are used is non-normal shape).'),'bar',
+ g.map((a,j)=>{const c=Array(k).fill(0);a.forEach(v=>c[Math.min(k-1,Math.floor((v-mn)/w))]++);return{label:nmz[j],data:c,backgroundColor:PA(j,.55)}}),[...Array(k)].map((_,i)=>f(mn+w*(i+.5),1)),L('ช่วงค่า (จุดกึ่งกลาง)','Bin (midpoint)'),L('ความถี่','Frequency'),{lg:1}));
+ if(!R.sc)o.push(mk(L('ฟังก์ชันการแจกแจงสะสมเชิงประจักษ์ (ECDF)','Empirical cumulative distribution (ECDF)'),L('เส้นของแต่ละกลุ่มแสดงสัดส่วนข้อมูลที่ ≤ ค่านั้น เส้นที่อยู่ทางขวา/ล่างหมายถึงค่าโดยรวมสูงกว่า ระยะห่างแนวตั้งสูงสุดระหว่างเส้นคือสถิติ D ของ Kolmogorov-Smirnov','Each line is the share of data ≤ x. A line further right/lower means higher values. The largest vertical gap is the KS statistic D.'),'scatter',
+ g.map((a,j)=>{const s=[...a].sort((x,y)=>x-y);return{label:nmz[j],showLine:true,stepped:'after',pointRadius:0,borderColor:PA(j),data:[{x:s[0],y:0},...s.map((v,i)=>({x:v,y:(i+1)/s.length}))]}}),null,L('ค่า','Value'),L('สัดส่วนสะสม','Cumulative proportion'),{lg:1}));}
+ if(R.P&&R.P[0].length===2){const P=R.P,lo=Math.min(...P.flat()),hi=Math.max(...P.flat()),d=P.map(a=>a[1]-a[0]),dm=Math.min(...d),dM=Math.max(...d),k=Math.max(5,Math.ceil(1+Math.log2(d.length))),w=(dM-dm)/k||1;
+ o.push(mk(L('แผนภาพกระจาย ก่อน–หลัง','Paired scatter: before vs after'),L('แต่ละจุดคือ 1 คู่ จุดเหนือเส้นทแยง (y=x) = ค่าหลังสูงกว่าก่อน ถ้าจุดส่วนใหญ่อยู่ข้างใดข้างหนึ่งของเส้น แสดงว่ามีการเปลี่ยนแปลงอย่างเป็นระบบ','Each dot is a pair. Points above the y=x line mean after>before. A one-sided cloud indicates a systematic change.'),'scatter',[{label:L('คู่ข้อมูล','Pairs'),data:P.map(a=>({x:a[0],y:a[1]})),backgroundColor:PA(0,.8)},{label:'y = x',type:'line',data:[{x:lo,y:lo},{x:hi,y:hi}],borderColor:'#dc2626',pointRadius:0,borderDash:[6,4]}],null,nm[0],nm[1],{lg:1}));
+ o.push(mk(L('ฮิสโทแกรมของผลต่าง (หลัง − ก่อน)','Histogram of differences (after − before)'),L('ถ้าแท่งส่วนใหญ่อยู่ทางขวาของ 0 แสดงว่าค่าเพิ่มขึ้น ทางซ้าย = ลดลง การทดสอบนี้ตรวจว่าศูนย์กลางของผลต่างเบี่ยงเบนจาก 0 หรือไม่','Bars mostly right of 0 = increases, left = decreases. The test checks whether the centre of the differences departs from 0.'),'bar',[{label:L('ความถี่','Frequency'),data:(()=>{const c=Array(k).fill(0);d.forEach(v=>c[Math.min(k-1,Math.floor((v-dm)/w))]++);return c})(),backgroundColor:PA(2,.75)}],[...Array(k)].map((_,i)=>f(dm+w*(i+.5),1)),L('ผลต่าง','Difference'),L('ความถี่','Frequency')))}
+ if(R.sc){const{x,y,rx,ry}=R.sc,m=mean(rx),b=pear(rx,ry),n=x.length,lo=Math.min(...rx),hi=Math.max(...rx);
+ o.push(mk(L('แผนภาพกระจาย X–Y (ค่าดิบ)','Scatter plot X–Y (raw values)'),L('ดูแนวโน้มความสัมพันธ์ว่าเป็นแบบเพิ่ม/ลด (monotonic) หรือไม่ และมีค่าผิดปกติหรือไม่ สถิติอันดับทนต่อค่าผิดปกติได้ดี','Check for increasing/decreasing (monotonic) trend and outliers. Rank statistics are robust to outliers.'),'scatter',[{label:'(X,Y)',data:x.map((v,i)=>({x:v,y:y[i]})),backgroundColor:PA(0,.8)}],null,nm[0],nm[1]));
+ o.push(mk(L('แผนภาพกระจายของอันดับ','Scatter plot of ranks'),L('แปลงข้อมูลเป็นอันดับแล้วพล็อต เส้นสีแดงคือเส้นถดถอยบนอันดับ ความชันคือค่า ρ ของสเปียร์แมน ยิ่งจุดใกล้เส้นยิ่งสัมพันธ์สูง','Data converted to ranks. The red regression line has slope = Spearman ρ; the closer the points, the stronger the association.'),'scatter',[{label:L('อันดับ','Ranks'),data:rx.map((v,i)=>({x:v,y:ry[i]})),backgroundColor:PA(3,.8)},{type:'line',label:L('เส้นถดถอย','Fit'),data:[lo,hi].map(v=>({x:v,y:mean(ry)+b*(v-m)})),borderColor:'#dc2626',pointRadius:0}],null,L('อันดับ X','Rank X'),L('อันดับ Y','Rank Y'),{lg:1}));}
+ if(R.ct){const{rl,cl,O,E,Rz}=R.ct;
+ o.push(mk(L('ความถี่ที่สังเกต แยกตามกลุ่ม','Observed counts by category'),L('เปรียบเทียบความถี่จริงของแต่ละชุดค่าผสมระหว่างสองตัวแปร','Compares actual frequency of each combination of the two variables.'),'bar',cl.map((c,j)=>({label:c,data:O.map(r=>r[j]),backgroundColor:PA(j,.8)})),rl,nm[0],L('ความถี่','Count')));
+ o.push(mk(L('ความถี่ที่สังเกต เทียบค่าคาดหวัง','Observed vs expected counts'),L('แท่งเข้ม = ที่สังเกต, แท่งอ่อน = ที่คาดหวังเมื่ออิสระต่อกัน ยิ่งต่างกันมาก χ² ยิ่งสูง','Dark = observed, light = expected under independence. Larger gaps → larger χ².'),'bar',[{label:L('สังเกต','Observed'),data:O.flat(),backgroundColor:PA(0,.85)},{label:L('คาดหวัง','Expected'),data:E.flat(),backgroundColor:'rgba(150,160,170,.6)'}],rl.flatMap(r=>cl.map(c=>r+' / '+c)),'',L('ความถี่','Count')));
+ const pc=O.map(r=>r.map(o=>o/sum(r)*100));o.push(mk(L('สัดส่วนร้อยละภายในแถว (stacked)','Row percentages (stacked)'),L('ถ้าตัวแปรเป็นอิสระต่อกัน สัดส่วนของแต่ละแท่งควรใกล้เคียงกัน ถ้าแต่ละแท่งต่างกันมากแสดงว่ามีความสัมพันธ์','Under independence all bars should have similar proportions; large differences indicate association.'),'bar',cl.map((c,j)=>({label:c,data:pc.map(r=>r[j]),backgroundColor:PA(j,.8)})),rl,nm[0],'%',{x:{stacked:true},y:{stacked:true,max:100}}));
+ o.push(mk(L('ส่วนตกค้างมาตรฐาน','Standardized residuals'),L('ค่าเกิน ±1.96 (กรอบเส้น) คือเซลล์ที่สังเกตต่างจากคาดหวังอย่างมีนัยสำคัญ บวก = มากกว่าคาด ลบ = น้อยกว่าคาด','Beyond ±1.96 means the cell differs notably from expectation. Positive = more than expected, negative = fewer.'),'bar',cl.map((c,j)=>({label:c,data:Rz.map(r=>r[j]),backgroundColor:PA(j,.8)})),rl,nm[0],'z'));}
+ return o}
+/* ---------- UI ---------- */
+function msg(s){$('#msg').textContent=s}
+function tab(t){return`<h3 style="margin:14px 0 6px;font-size:1rem">${t.t}</h3><div class="w"><table><tr>${t.h.map(x=>`<th>${x}</th>`).join('')}</tr>${t.r.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</table></div>`}
+function build(){const t=T[cur],R=res,[h0,h1]=t.h[lang==='th'?0:1].split('|'),sig=R.p<.05;
+ TB=[];if(R.g)TB.push(desc(R.g,R.mr));(R.tabs||[]).forEach(x=>TB.push(x));
+ TB.push({t:L('ผลการทดสอบ: ','Test results: ')+t.n[lang==='th'?0:1],h:[L('ค่าสถิติ','Statistic'),L('ค่า','Value'),L('คำอธิบาย','Explanation')],r:R.st});
+ const concl=L(`H0: ${h0} / H1: ${h1}. ผลการทดสอบ p = ${pf(R.p)} ${sig?'< 0.05 จึงปฏิเสธ H0 สรุปว่า '+h1+' อย่างมีนัยสำคัญทางสถิติที่ระดับ 0.05':'≥ 0.05 จึงไม่ปฏิเสธ H0 ยังไม่พบหลักฐานเพียงพอว่า '+h1+' ที่ระดับ 0.05'}`,`H0: ${h0} / H1: ${h1}. Result p = ${pf(R.p)} ${sig?'< 0.05, so reject H0: '+h1+' (statistically significant at 0.05)':'≥ 0.05, so fail to reject H0: insufficient evidence for "'+h1+'" at 0.05'}`);
+ TB.push({t:L('สรุปผล','Conclusion'),h:[L('ข้อสรุป','Conclusion')],r:[[concl]],skip:1});
+ $('#tbls').innerHTML=TB.filter(x=>!x.skip).map(tab).join('')+`<div class="box"><b>${L('สรุปผล','Conclusion')}:</b> ${concl}</div><p class="mu">${L('หมายเหตุ: ค่า p ของ Mann-Whitney, Wilcoxon, Kendall, KS ใช้การประมาณแบบอาการ (asymptotic) ซึ่งเหมาะกับตัวอย่างขนาดไม่เล็กเกินไป','Note: p-values for Mann-Whitney, Wilcoxon, Kendall and KS use asymptotic approximations, best for moderate sample sizes.')}</p>`;
+ if(shown)showCharts()}
+function showCharts(){shown=true;CH.forEach(c=>c.destroy());CH=[];const gr=$('#gr');gr.innerHTML='';charts().forEach((o,i)=>{const d=document.createElement('div');d.className='cc';d.innerHTML=`<h3>${o.t}</h3><div class="cv"><canvas></canvas></div><p class="mu">${L('คำอธิบาย: ','Explanation: ')}${o.d}</p><button>${L('ดาวน์โหลดภาพ PNG','Download PNG')}</button>`;gr.appendChild(d);const cv=d.querySelector('canvas');cv.setAttribute('role','img');cv.setAttribute('aria-label',o.t);const ch=new Chart(cv,o.c);CH.push(ch);d.querySelector('button').onclick=()=>{const a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download=`chart${i+1}_${cur}.png`;a.click()}})}
+function go(){try{if(!data)throw new Error(L('กรุณาแนบไฟล์ข้อมูลหรือกดใช้ข้อมูลตัวอย่างก่อน','Please upload a data file or use the sample data first'));if(data.cols.length<T[cur].k)throw new Error(L(`ต้องมีอย่างน้อย ${T[cur].k} คอลัมน์`,`At least ${T[cur].k} columns required`));nm=data.h;res=T[cur].run();msg('');$('#out').hidden=false;build()}catch(e){msg(e.message);res=null;$('#out').hidden=true}}
+function load(h,cols){data={h,cols};pv();$('#out').hidden=true;res=null;shown=false}
+function pv(){if(!data){$('#pv').innerHTML='';return}const n=Math.max(...data.cols.map(c=>c.length));$('#pv').innerHTML=`<p class="mu">${L('ตัวอย่างข้อมูล (แสดง 8 แถวแรก จากทั้งหมด '+n+' แถว)','Data preview (first 8 of '+n+' rows)')}</p><table><tr>${data.h.map(x=>`<th>${x}</th>`).join('')}</tr>${[...Array(Math.min(8,n))].map((_,i)=>`<tr>${data.cols.map(c=>`<td>${c[i]??''}</td>`).join('')}</tr>`).join('')}</table>`}
+const cv=v=>typeof v==='string'&&v.trim()!==''&&!isNaN(v)?+v:(v===''||v===undefined?null:v);
+function tabs(){$('#tb').innerHTML=Object.entries(T).map(([k,t])=>`<button class="${k===cur?'on':''}" data-k="${k}">${t.n[lang==='th'?0:1]}</button>`).join('');$('#hint').textContent=L('รูปแบบข้อมูล: ','Data format: ')+T[cur].f[lang==='th'?0:1]+L(' (แถวแรกเป็นชื่อคอลัมน์)',' (first row = column names)');
+ $('#tb').querySelectorAll('button').forEach(b=>b.onclick=()=>{cur=b.dataset.k;tabs();$('#out').hidden=true;res=null;shown=false;const s=sample[T[cur].s];if(data&&data.sampleOf&&data.sampleOf!==T[cur].s){data=null;pv();$('#fi').value=''}})}
+function applyLang(){document.documentElement.lang=lang;document.querySelectorAll('[data-th]').forEach(e=>e.textContent=e.dataset[lang]);document.querySelectorAll('.lg').forEach(b=>b.classList.toggle('on',b.dataset.l===lang));tabs();pv();if(res)go()}
+document.querySelectorAll('.lg').forEach(b=>b.onclick=()=>{lang=b.dataset.l;applyLang()});
+$('#fi').onchange=e=>{const fl=e.target.files[0];if(!fl)return;const r=new FileReader();r.onload=ev=>{try{const wb=XLSX.read(ev.target.result,{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null}),h=rows[0].map((x,i)=>x==null?'Col'+(i+1):String(x));load(h,h.map((_,j)=>rows.slice(1).map(r=>cv(r[j]))));msg('')}catch(x){msg(L('อ่านไฟล์ไม่ได้: ','Cannot read file: ')+x.message)}};r.readAsArrayBuffer(fl)};
+$('#bs').onclick=()=>{const s=sample[T[cur].s];load(s[0],s[1]);data.sampleOf=T[cur].s;msg('')};
+$('#bds').onclick=()=>{const s=sample[T[cur].s],n=Math.max(...s[1].map(c=>c.length)),aoa=[s[0],...[...Array(n)].map((_,i)=>s[1].map(c=>c[i]??null))],ws=XLSX.utils.aoa_to_sheet(aoa),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Data');XLSX.writeFile(wb,`sample_${cur}.xlsx`)};
+$('#run').onclick=go;
+$('#sc').onclick=showCharts;
+$('#dx').onclick=()=>{const wb=XLSX.utils.book_new();TB.forEach((t,i)=>{const ws=XLSX.utils.aoa_to_sheet([[t.t],t.h,...t.r]);ws['!cols']=t.h.map((_,j)=>({wch:j===t.h.length-1&&t.h.length===3?60:22}));XLSX.utils.book_append_sheet(wb,ws,(i+1)+'_'+t.t.replace(/[\\\/?*\[\]:]/g,'').slice(0,24))});XLSX.writeFile(wb,`results_${cur}.xlsx`)};
+$('#rs').onclick=()=>{CH.forEach(c=>c.destroy());CH=[];data=null;res=null;shown=false;cur='mwu';$('#fi').value='';$('#gr').innerHTML='';$('#out').hidden=true;msg('');applyLang()};
+applyLang();
+</script></body></html>
